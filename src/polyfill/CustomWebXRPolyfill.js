@@ -7,6 +7,7 @@ import XRRigidTransform from 'webxr-polyfill/src/api/XRRigidTransform';
 import XRJointPose from './api/XRJointPose';
 import XRHitTestSource from './api/XRHitTestSource';
 import XRHitTestResult from './api/XRHitTestResult';
+import XRPose from 'webxr-polyfill/src/api/XRPose';
 import XRTransientInputHitTestSource from './api/XRTransientInputHitTestSource';
 import XRTransientInputHitTestResult from './api/XRTransientInputHitTestResult';
 import API from 'webxr-polyfill/src/api/index';
@@ -111,13 +112,25 @@ export default class CustomWebXRPolyfill extends WebXRPolyfill {
     };
 
     XRFrame.prototype.fillJointRadii = function (jointSpaces, radii) {
-      // @TODO: Implement
-      throw new Error('XRFrame.fillJointRadii is not imlemented yet.');
+      
     };
 
+    /**
+     * @param {Iterable<XRJointSpace>} spaces 
+     * @param {XRReferenceSpace} baseSpace 
+     * @param {Float32Array} transforms 
+     */
     XRFrame.prototype.fillPoses = function (spaces, baseSpace, transforms) {
-      // @TODO: Implement
-      throw new Error('XRFrame.fillPoses is not imlemented yet.');
+      let i = 0
+      for (const space of spaces) {
+        const transform = baseSpace._getSpaceRelativeTransform(space)
+        if (transform) {
+          for (let j = 0; j < 16; j++) {
+            transforms[i * 16 + j] = transform.matrix[j]
+          }
+        }
+        i++
+      }
     };
 
     //

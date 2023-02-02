@@ -6488,7 +6488,7 @@ host this content on a secure origin for the best user experience.
                   out[15] = 1;
                   return out;
                 }
-                function perspectiveNO(out, fovy, aspect, near, far) {
+                function perspective$1(out, fovy, aspect, near, far) {
                   var f = 1.0 / Math.tan(fovy / 2),
                       nf;
                   out[0] = f / aspect;
@@ -6515,7 +6515,6 @@ host this content on a secure origin for the best user experience.
                   }
                   return out;
                 }
-                var perspective$1 = perspectiveNO;
 
                 function create$7() {
                   var out = new ARRAY_TYPE$1(3);
@@ -37430,10 +37429,22 @@ host this content on a secure origin for the best user experience.
                       return transform ? new XRJointPose(transform, false) : null;
                     };
                     XRFrame.prototype.fillJointRadii = function (jointSpaces, radii) {
-                      throw new Error('XRFrame.fillJointRadii is not imlemented yet.');
+                      for(let i = 0; i < jointSpaces.length; i++) {
+                        const space = jointSpaces[i];
+                        radii[i] = space._radius;
+                      }
                     };
                     XRFrame.prototype.fillPoses = function (spaces, baseSpace, transforms) {
-                      throw new Error('XRFrame.fillPoses is not imlemented yet.');
+                      let i = 0;
+                      for (const space of spaces) {
+                        const transform = baseSpace._getSpaceRelativeTransform(space);
+                        if (transform) {
+                          for (let j = 0; j < 16; j++) {
+                            transforms[i * 16 + j] = transform.matrix[j];
+                          }
+                        }
+                        i++;
+                      }
                     };
                     if (this.nativeWebXR) {
                       overrideAPI(this.global);
