@@ -1,7 +1,9 @@
 import XRDevice from 'webxr-polyfill/src/devices/XRDevice';
-import XRInputSource from 'webxr-polyfill/src/api/XRInputSource';
 import XRTransientInputHitTestSource from './api/XRTransientInputHitTestSource';
+import XRHand from './api/XRHand';
+import XRHandJoint from './api/XRHandJoint';
 import {PRIVATE as XRSESSION_PRIVATE} from 'webxr-polyfill/src/api/XRSession';
+import {PRIVATE as XRJOINT_SPACE_PRIVATE} from './api/XRJointSpace';
 import GamepadXRInputSource from 'webxr-polyfill/src/devices/GamepadXRInputSource';
 import {
   vec3,
@@ -57,6 +59,12 @@ export default class EmulatedXRDevice extends XRDevice {
     // controllers
     this.gamepads = [];
     this.gamepadInputSources = [];
+
+    // hand controllers
+    this.handInputEnabled = config.handInput !== undefined ? config.handInput : false;
+    this.handGamepads = [];
+    this.handGamepadInputSources = [];
+    this.hasHandControllers = false;
 
     // other configurations
     this.stereoEffectEnabled = config.stereoEffect !== undefined ? config.stereoEffect : true;
@@ -297,7 +305,7 @@ export default class EmulatedXRDevice extends XRDevice {
             }
             this.dispatchEvent('@@webxr-polyfill/input-select-end', { sessionId: session.id, inputSource: inputSourceImpl.inputSource });
           }
-          // imputSourceImpl.primaryActionPressed is updated in onFrameEnd().
+          // inputSourceImpl.primaryActionPressed is updated in onFrameEnd().
         }
         if (inputSourceImpl.primarySqueezeButtonIndex !== -1) {
           const primarySqueezeActionPressed = gamepad.buttons[inputSourceImpl.primarySqueezeButtonIndex].pressed;
@@ -433,7 +441,9 @@ export default class EmulatedXRDevice extends XRDevice {
 
   getInputSources() {
     const inputSources = [];
-    for (const inputSourceImpl of this.gamepadInputSources) {
+    const inputSourceImpls = this.hasHandControllers && this.handInputEnabled
+      ? this.handGamepadInputSources : this.gamepadInputSources;
+    for (const inputSourceImpl of inputSourceImpls) {
       if (inputSourceImpl.active) {
         inputSources.push(inputSourceImpl.inputSource);
       }
@@ -712,6 +722,10 @@ export default class EmulatedXRDevice extends XRDevice {
     this.stereoEffectEnabled = enabled;
   }
 
+  _updateHandInput(enabled) {
+    this.handInputEnabled = enabled;
+  }
+
   _updatePose(positionArray, quaternionArray) {
     for (let i = 0; i < 3; i++) {
       this.position[i] = positionArray[i];
@@ -731,6 +745,19 @@ export default class EmulatedXRDevice extends XRDevice {
     for (let i = 0; i < 4; i++) {
       pose.orientation[i] = quaternionArray[i];
     }
+  }
+
+  _updateHandPose(matrixArray, handIndex, jointName) {
+    if (!this.hasHandControllers ||
+      handIndex >= this.handGamepadInputSources.length ||
+      XRHandJoint[jointName] === undefined) {
+      return;
+    }
+    const m = mat4.create();
+    for (let i = 0; i < 16; i++) {
+      m[i] = matrixArray[i];
+    }
+    this.handGamepadInputSources[handIndex].inputSource.hand.get(jointName)._baseMatrix = m;
   }
 
   _updateInputButtonPressed(pressed, controllerIndex, buttonIndex) {
@@ -757,9 +784,12 @@ export default class EmulatedXRDevice extends XRDevice {
 
   _initializeControllers(config) {
     const hasController = config.controllers !== undefined;
+    this.hasHandControllers = this.features.includes('hand-tracking');
     const controllerNum = hasController ? config.controllers.length : 0;
     this.gamepads.length = 0;
     this.gamepadInputSources.length = 0;
+    this.handGamepads.length = 0;
+    this.handGamepadInputSources.length = 0;
     for (let i = 0; i < controllerNum; i++) {
       const controller = config.controllers[i];
       const id = controller.id || '';
@@ -769,9 +799,22 @@ export default class EmulatedXRDevice extends XRDevice {
       const primarySqueezeButtonIndex = controller.primarySqueezeButtonIndex !== undefined ? controller.primarySqueezeButtonIndex : -1;
       this.gamepads.push(createGamepad(id, i === 0 ? 'right' : 'left', buttonNum, hasPosition));
       // @TODO: targetRayMode should be screen for right controller(pointer) in AR
-      const imputSourceImpl = new GamepadXRInputSource(this, {}, primaryButtonIndex, primarySqueezeButtonIndex);
-      imputSourceImpl.active = !this.arDevice; // Override property for transient imput
-      this.gamepadInputSources.push(imputSourceImpl);
+      const inputSourceImpl = new GamepadXRInputSource(this, {}, primaryButtonIndex, primarySqueezeButtonIndex);
+      inputSourceImpl.active = !this.arDevice; // Override property for transient input
+      inputSourceImpl.inputSource.hand = null;
+      this.gamepadInputSources.push(inputSourceImpl);
+
+      if (this.hasHandControllers) {
+        // @TODO: temporal
+        this.handGamepads.push(createGamepad(id, i === 0 ? 'right' : 'left', buttonNum, true));
+        const inputSourceImpl = new GamepadXRInputSource(this, {}, 0, -1);
+        inputSourceImpl.active = true;
+        inputSourceImpl.inputSource.hand = new XRHand(inputSourceImpl);
+        this.handGamepadInputSources.push(inputSourceImpl);
+
+        // @TODO: temporal
+        inputSourceImpl.updateFromGamepad(this.handGamepads[i]);
+      }
     }
   }
 
@@ -899,9 +942,33 @@ export default class EmulatedXRDevice extends XRDevice {
       this._updateStereoEffect(event.detail.enabled);
     });
 
+    window.addEventListener('webxr-hand-input', event => {
+      this._updateHandInput(event.detail.enabled);
+    });
+
     window.addEventListener('webxr-virtual-room-response', event => {
       const virtualRoomAssetBuffer = event.detail.buffer;
       this.arScene.loadVirtualRoomAsset(virtualRoomAssetBuffer);
+    });
+
+    window.addEventListener('webxr-hand-pose', event => {
+      const poses = event.detail.poses;
+      const jointNames = Object.keys(XRHandJoint);
+      for (const key in poses) {
+        const pose = poses[key];
+        const m = mat4.identity(mat4.create());
+        // 3D position data are packed in pose
+        for (let i = 0; i < 25; i++) {
+          mat4.identity(m);
+          m[12] = pose[i * 3 + 0];
+          m[13] = pose[i * 3 + 1];
+          m[14] = pose[i * 3 + 2];
+          // Place the hands in front of the eyes
+          mat4.multiply(m, this.matrix, m);
+          // @TODO: Proper Hand select
+          this._updateHandPose(m, key === 'right' ? 0 : 1, jointNames[i]);
+        }
+      }
     });
   }
 };

@@ -1,7 +1,8 @@
 {
   "default": {
     "deviceKey": "Oculus Quest",
-    "stereoEffect": true
+    "stereoEffect": true,
+    "handInput": false
   },
   "devices": {
     "None": {
@@ -149,6 +150,9 @@
       "modes": [
         "inline",
         "immersive-vr"
+      ],
+      "features": [
+        "hand-tracking"
       ],
       "headset": {
         "hasPosition": true,
