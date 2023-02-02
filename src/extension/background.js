@@ -41,7 +41,7 @@ chrome.runtime.onConnect.addListener(port => {
       return;
     }
 
-    // transfer message between panel and contentScript of the same tab
+    // transfer message between panel and contentScripts of the same tab
 
     if (port.name === 'panel') {
       postMessageToPorts(portMap.contentScript, message);
@@ -196,4 +196,4 @@ const stopPictureInPicture = async () => {
     active: !paused
   });
   return paused;
-};
+}
